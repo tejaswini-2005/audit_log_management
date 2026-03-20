@@ -1,0 +1,17 @@
+# Environment files (keep template)
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Runtime and logs
+logs/
+*.log
+*.pid
+*.pid.lock
+*.seed
+
+# Coverage
+coverage/
