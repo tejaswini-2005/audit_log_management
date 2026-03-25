@@ -30,7 +30,7 @@ export const verifyLink = async (req, res) => {
     `);
   }
 
-  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5174").replace(/\/$/, "");
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
   return res.redirect(`${frontendUrl}/accept-invite/${token}`);
 };
 

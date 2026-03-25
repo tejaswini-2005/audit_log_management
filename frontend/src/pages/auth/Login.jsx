@@ -23,9 +23,13 @@ const Login = () => {
       navigate("/dashboard");
     } catch (err) {
       const validationMessage = err?.response?.data?.errors?.[0]?.message;
+      const networkMessage = !err?.response
+        ? "Unable to reach server. Check backend status and API URL/CORS settings."
+        : "";
       setError(
         validationMessage ||
           err?.response?.data?.msg ||
+          networkMessage ||
           "Login failed. Check your credentials."
       );
     } finally {
