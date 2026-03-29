@@ -7,7 +7,7 @@ import logRoutes from "./routes/logRoutes.js";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
-import { allowedOrigins } from "./config/security.js";
+import { isAllowedOrigin } from "./config/security.js";
 
 dotenv.config();
 const port = process.env.PORT || 8080;
@@ -19,7 +19,7 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
 
