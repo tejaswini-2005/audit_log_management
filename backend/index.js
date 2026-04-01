@@ -8,6 +8,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import { isAllowedOrigin } from "./config/security.js";
+import { csrfProtection, isCsrfError } from "./middleware/csrfMiddleware.js";
 
 dotenv.config();
 const port = process.env.PORT || 8080;
@@ -29,6 +30,8 @@ app.use(
   })
 );
 
+app.use(csrfProtection);
+
 app.get("/", (req, res) => {
   res.status(200).json({ msg: `Server is running on port ${port}` });
 });
@@ -44,6 +47,10 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   if (err?.message?.startsWith("CORS:")) {
     return res.status(403).json({ msg: err.message });
+  }
+
+  if (isCsrfError(err)) {
+    return res.status(403).json({ msg: "Invalid or missing CSRF token" });
   }
 
   const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;

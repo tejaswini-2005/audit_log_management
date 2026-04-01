@@ -34,70 +34,82 @@ export const verifyLink = async (req, res) => {
   return res.redirect(`${frontendUrl}/accept-invite/${token}`);
 };
 
-export const verifyUser = async (req, res) => {
-  const { token, password } = req.body;
+export const verifyUser = async (req, res, next) => {
+  try {
+    const { token, password } = req.body;
 
-  const user = await findUserByInviteToken(token);
+    const user = await findUserByInviteToken(token);
 
-  if (!user) return res.status(400).json({ msg: "Invalid or expired token" });
+    if (!user) return res.status(400).json({ msg: "Invalid or expired token" });
 
-  user.password = password;
-  user.isVerified = true;
-  user.verifyTokenHash = undefined;
-  user.verifyTokenExpiresAt = undefined;
+    user.password = password;
+    user.isVerified = true;
+    user.verifyTokenHash = undefined;
+    user.verifyTokenExpiresAt = undefined;
 
-  await user.save();
+    await user.save();
 
-  await createLog(user._id, "INVITE_ACCEPTED", buildRequestMetadata(req));
+    await createLog(user._id, "INVITE_ACCEPTED", buildRequestMetadata(req));
 
-  res.json({ msg: "Account activated" });
+    return res.json({ msg: "Account activated" });
+  } catch (err) {
+    return next(err);
+  }
 };
 
-export const login = async (req, res) => {
-  const { email, password } = req.body;
+export const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
 
-  const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
 
-  const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: normalizedEmail });
 
-  if (!user) {
-    return res.status(400).json({ msg: "Invalid email or password" });
+    if (!user) {
+      return res.status(400).json({ msg: "Invalid email or password" });
+    }
+
+    if (!user.isVerified) {
+      await createLog(
+        user._id,
+        "LOGIN_FAILED",
+        buildRequestMetadata(req, { reason: "ACCOUNT_NOT_VERIFIED" })
+      );
+
+      return res.status(400).json({ msg: "Account is not verified" });
+    }
+
+    const match = await user.comparePassword(password);
+
+    if (!match) {
+      await createLog(
+        user._id,
+        "LOGIN_FAILED",
+        buildRequestMetadata(req, { reason: "INVALID_PASSWORD" })
+      );
+      return res.status(400).json({ msg: "Invalid email or password" });
+    }
+
+    generateToken(user._id, res);
+
+    await createLog(user._id, "LOGIN_SUCCESS", buildRequestMetadata(req));
+
+    return res.json({ msg: "Logged in" });
+  } catch (err) {
+    return next(err);
   }
-
-  if (!user.isVerified) {
-    await createLog(
-      user._id,
-      "LOGIN_FAILED",
-      buildRequestMetadata(req, { reason: "ACCOUNT_NOT_VERIFIED" })
-    );
-
-    return res.status(400).json({ msg: "Account is not verified" });
-  }
-
-  const match = await user.comparePassword(password);
-
-  if (!match) {
-    await createLog(
-      user._id,
-      "LOGIN_FAILED",
-      buildRequestMetadata(req, { reason: "INVALID_PASSWORD" })
-    );
-    return res.status(400).json({ msg: "Invalid email or password" });
-  }
-
-  generateToken(user._id, res);
-
-  await createLog(user._id, "LOGIN_SUCCESS", buildRequestMetadata(req));
-
-  res.json({ msg: "Logged in" });
 };
 
-export const logout = async (req, res) => {
-  await createLog(req.user._id, "LOGOUT", buildRequestMetadata(req));
+export const logout = async (req, res, next) => {
+  try {
+    await createLog(req.user._id, "LOGOUT", buildRequestMetadata(req));
 
-  res.clearCookie(cookieName, clearCookieOptions);
+    res.clearCookie(cookieName, clearCookieOptions);
 
-  res.json({ msg: "Logged out" });
+    return res.json({ msg: "Logged out" });
+  } catch (err) {
+    return next(err);
+  }
 };
 
 export const registerAdmin = async (req, res) => {

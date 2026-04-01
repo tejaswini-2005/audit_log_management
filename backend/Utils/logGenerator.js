@@ -1,85 +1,174 @@
+import mongoose from "mongoose";
 import AuditLog from "../models/AuditLog.js";
 import AuditCounter from "../models/AuditCounter.js";
+import AuditCheckpoint from "../models/AuditCheckpoint.js";
 import { calculateAuditHash } from "./auditHash.js";
 
 const COUNTER_KEY = "audit-log-sequence";
-const WAIT_MS = 25;
-const MAX_PREVIOUS_WAIT_ATTEMPTS = 40;
+const CHECKPOINT_INTERVAL = 50;
 
-let appendQueue = Promise.resolve();
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
+/**
+ * Normalize metadata to ensure deterministic and consistent structure for audit hashing.
+ * 
+ * Requirements:
+ * - Convert undefined → null (preserve all keys)
+ * - Handle MongoDB ObjectId → string
+ * - Handle Date → ISO string
+ * - Recursively normalize nested objects/arrays
+ * - Ensure stable output for consistent hashing
+ * - Do NOT mutate the original object
+ */
 const normalizeMetadata = (value) => {
+  // Handle undefined → convert to null
+  if (value === undefined) {
+    return null;
+  }
+
+  // Handle null
+  if (value === null) {
+    return null;
+  }
+
+  // Handle MongoDB ObjectId
+  if (mongoose.Types.ObjectId.isValid(value) && value._id === undefined && value.toHexString) {
+    return value.toString();
+  }
+
+  // Handle Date objects → ISO string
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  // Handle arrays → recursively normalize each element
   if (Array.isArray(value)) {
     return value.map((item) => normalizeMetadata(item));
   }
 
-  if (value && typeof value === "object") {
-    return Object.entries(value).reduce((acc, [key, entryValue]) => {
-      if (entryValue === undefined) {
-        return acc;
-      }
+  // Handle plain objects → recursively normalize all keys and values
+  if (typeof value === "object" && value.constructor === Object) {
+    const normalized = {};
 
-      acc[key] = normalizeMetadata(entryValue);
-      return acc;
-    }, {});
+    // Process all keys, maintaining order
+    for (const [key, entryValue] of Object.entries(value)) {
+      normalized[key] = normalizeMetadata(entryValue);
+    }
+
+    return normalized;
   }
 
+  // Primitives (string, number, boolean) pass through unchanged
   return value;
 };
 
-const getPreviousHash = async (sequence) => {
-  if (sequence <= 1) {
-    return "GENESIS";
-  }
+const appendAuditRecord = async ({ userId, action, metadata }) => {
+  const session = await mongoose.startSession();
 
-  for (let attempt = 0; attempt < MAX_PREVIOUS_WAIT_ATTEMPTS; attempt += 1) {
-    const previousLog = await AuditLog.findOne({ sequence: sequence - 1 }).select(
-      "currentHash"
+  try {
+    session.startTransaction();
+
+    const counter = await AuditCounter.findOneAndUpdate(
+      { key: COUNTER_KEY },
+      { $inc: { value: 1 } },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+        session,
+      }
     );
 
-    if (previousLog?.currentHash) {
-      return previousLog.currentHash;
+    const sequence = counter.value;
+    const latestLog = await AuditLog.findOne()
+      .sort({ sequence: -1 })
+      .select("sequence currentHash")
+      .session(session)
+      .lean();
+
+    let previousHash = "GENESIS";
+
+    if (sequence > 1) {
+      const previousLog = await AuditLog.findOne({ sequence: sequence - 1 })
+        .select("currentHash")
+        .session(session)
+        .lean();
+
+      if (previousLog?.currentHash) {
+        previousHash = previousLog.currentHash;
+      } else if (latestLog?.sequence === sequence - 1 && latestLog.currentHash) {
+        previousHash = latestLog.currentHash;
+      } else {
+        throw new Error(
+          `Unable to resolve previous hash for audit sequence ${sequence}`
+        );
+      }
     }
 
-    await wait(WAIT_MS);
+    const timestamp = new Date();
+    const normalizedMetadata = normalizeMetadata(metadata || {});
+
+    // Debug: Log normalized metadata before hashing (optional, can be disabled)
+    if (process.env.DEBUG_AUDIT_HASH === "true") {
+      console.log(
+        `[AUDIT_HASH_DEBUG] Seq ${sequence}, Action: ${action}, Metadata:`,
+        JSON.stringify(normalizedMetadata)
+      );
+    }
+
+    // Hash with the same normalized metadata that will be stored in DB
+    const currentHash = calculateAuditHash({
+      userId,
+      action,
+      metadata: normalizedMetadata,
+      timestamp,
+      previousHash,
+      sequence,
+    });
+
+    // Store the identical normalized metadata (no recomputation or mutation)
+    await AuditLog.create(
+      [
+        {
+          sequence,
+          userId,
+          action,
+          metadata: normalizedMetadata,
+          previousHash,
+          currentHash,
+          timestamp,
+        },
+      ],
+      { session }
+    );
+
+    if (sequence % CHECKPOINT_INTERVAL === 0) {
+      await AuditCheckpoint.findOneAndUpdate(
+        { sequence },
+        {
+          $setOnInsert: {
+            sequence,
+            hash: currentHash,
+            createdAt: timestamp,
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          session,
+        }
+      );
+    }
+
+    await session.commitTransaction();
+  } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    console.error("Failed to create audit log transaction:", err);
+    throw err;
+  } finally {
+    await session.endSession();
   }
-
-  const latestLog = await AuditLog.findOne().sort({ sequence: -1 }).select("currentHash");
-  return latestLog?.currentHash || "GENESIS";
-};
-
-const appendAuditRecord = async ({ userId, action, metadata }) => {
-  const counter = await AuditCounter.findOneAndUpdate(
-    { key: COUNTER_KEY },
-    { $inc: { value: 1 } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
-
-  const sequence = counter.value;
-  const previousHash = await getPreviousHash(sequence);
-  const timestamp = new Date();
-  const normalizedMetadata = normalizeMetadata(metadata || {});
-
-  const currentHash = calculateAuditHash({
-    userId,
-    action,
-    metadata: normalizedMetadata,
-    timestamp,
-    previousHash,
-    sequence,
-  });
-
-  await AuditLog.create({
-    sequence,
-    userId,
-    action,
-    metadata: normalizedMetadata,
-    previousHash,
-    currentHash,
-    timestamp,
-  });
 };
 
 const createLog = async (userId, action, metadata = {}) => {
@@ -88,14 +177,7 @@ const createLog = async (userId, action, metadata = {}) => {
   }
 
   const safeMetadata = metadata && typeof metadata === "object" ? metadata : {};
-
-  appendQueue = appendQueue
-    .then(() => appendAuditRecord({ userId, action, metadata: safeMetadata }))
-    .catch((err) => {
-      console.error("Failed to create audit log:", err.message);
-    });
-
-  await appendQueue;
+  await appendAuditRecord({ userId, action, metadata: safeMetadata });
 };
 
 export default createLog;

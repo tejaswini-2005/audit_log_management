@@ -14,7 +14,6 @@ import { getAllLogsSchema, getMyLogsSchema } from "../validators/logSchemas.js";
 const router = express.Router();
 router.get("/verify-integrity", auth, adminOnly, verifyLogIntegrity);
 
-
 router.get("/me", auth, validate(getMyLogsSchema), getMyLogs);
 router.get("/all", auth, adminOnly, validate(getAllLogsSchema), getAllLogs);
 

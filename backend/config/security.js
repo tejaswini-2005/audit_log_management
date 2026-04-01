@@ -5,7 +5,7 @@ const cookieName = process.env.AUTH_COOKIE_NAME || "token";
 const tokenCookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: isProduction ? "none" : "lax",
+  sameSite: "strict",
   maxAge: 24 * 60 * 60 * 1000,
   path: "/",
 };
@@ -13,7 +13,15 @@ const tokenCookieOptions = {
 const clearCookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: isProduction ? "none" : "lax",
+  sameSite: "strict",
+  path: "/",
+};
+
+const csrfCookieOptions = {
+  key: process.env.CSRF_COOKIE_NAME || "_csrf",
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: "strict",
   path: "/",
 };
 
@@ -83,6 +91,7 @@ export {
   allowedOrigins,
   isAllowedOrigin,
   clearCookieOptions,
+  csrfCookieOptions,
   cookieName,
   tokenCookieOptions,
 };

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-const stableStringify = (value) => {
+export const stableStringify = (value) => {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
@@ -24,6 +24,9 @@ export const calculateAuditHash = ({
   previousHash,
   sequence,
 }) => {
+  // Assume metadata is already normalized (by caller)
+  // Do not modify metadata inside this function
+
   const safeTimestamp =
     timestamp instanceof Date
       ? timestamp.toISOString()
@@ -37,6 +40,11 @@ export const calculateAuditHash = ({
     String(previousHash),
     String(sequence),
   ].join("|");
+
+  // Debug: Log payload before hashing (optional, can be disabled)
+  if (process.env.DEBUG_AUDIT_HASH === "true") {
+    console.log("[AUDIT_HASH_PAYLOAD]", payload);
+  }
 
   return crypto.createHash("sha256").update(payload).digest("hex");
 };
