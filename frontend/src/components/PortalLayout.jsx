@@ -12,6 +12,11 @@ const primaryLinks = [
     label: "My Activity",
     helper: "Personal audit stream",
   },
+  {
+    to: "/dashboard/projects",
+    label: "Projects",
+    helper: "Workflow execution",
+  },
 ];
 
 const adminLinks = [
@@ -24,6 +29,11 @@ const adminLinks = [
     to: "/dashboard/invite-user",
     label: "Invite User",
     helper: "Role-based onboarding",
+  },
+  {
+    to: "/dashboard/project-research",
+    label: "Project Research",
+    helper: "Idea staging layer",
   },
 ];
 
@@ -70,6 +80,13 @@ const PortalLayout = ({ title, subtitle, children }) => {
                 <span className="link-helper">{item.helper}</span>
               </NavLink>
             ))}
+
+            {user?.role !== "ADMIN" && (
+              <NavLink to="/dashboard/content" className={buildNavClass}>
+                <span className="link-title">Content Draft</span>
+                <span className="link-helper">OCR and edit text</span>
+              </NavLink>
+            )}
 
             {user?.role === "ADMIN" && (
               <>

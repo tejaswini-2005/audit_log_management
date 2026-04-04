@@ -7,9 +7,11 @@ import {
   logout,
   verifyUser,
   registerAdmin,
+  listUsers,
 } from "../controllers/authController.js";
 
 import { auth } from "../middleware/authMiddleware.js";
+import { adminOnly } from "../middleware/roleMiddleware.js";
 import { validate } from "../middleware/validateMiddleware.js";
 import { createRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import {
@@ -47,5 +49,6 @@ router.post("/logout", auth, logout);
 router.get("/me", auth, (req, res) => {
   res.json(req.user);
 });
+router.get("/list", auth, adminOnly, listUsers);
 
 export default router;

@@ -166,3 +166,15 @@ export const registerAdmin = async (req, res) => {
   }
 };
 
+export const listUsers = async (req, res, next) => {
+  try {
+    const users = await User.find({ isVerified: true, role: { $ne: "ADMIN" } })
+      .select("_id name email role")
+      .sort({ name: 1 });
+
+    return res.json(users);
+  } catch (err) {
+    return next(err);
+  }
+};
+
