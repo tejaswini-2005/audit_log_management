@@ -1,27 +1,29 @@
 const isProduction = process.env.NODE_ENV === "production";
+const sameSite = isProduction ? "none" : "strict";
+const secureCookies = isProduction;
 
 const cookieName = process.env.AUTH_COOKIE_NAME || "token";
 
 const tokenCookieOptions = {
   httpOnly: true,
-  secure: isProduction,
-  sameSite: "strict",
+  secure: secureCookies,
+  sameSite,
   maxAge: 24 * 60 * 60 * 1000,
   path: "/",
 };
 
 const clearCookieOptions = {
   httpOnly: true,
-  secure: isProduction,
-  sameSite: "strict",
+  secure: secureCookies,
+  sameSite,
   path: "/",
 };
 
 const csrfCookieOptions = {
   key: process.env.CSRF_COOKIE_NAME || "_csrf",
   httpOnly: true,
-  secure: isProduction,
-  sameSite: "strict",
+  secure: secureCookies,
+  sameSite,
   path: "/",
 };
 
